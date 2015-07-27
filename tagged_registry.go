@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/mathpl/go-metrics"
+	"github.com/rcrowley/go-metrics"
 )
 
 // DuplicateMetric is the error returned by Registry.Register when a metric

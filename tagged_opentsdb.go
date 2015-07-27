@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/mathpl/go-metrics"
+	"github.com/rcrowley/go-metrics"
 )
 
 type OpenTSDBFormat int
