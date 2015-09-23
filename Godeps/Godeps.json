@@ -1,0 +1,10 @@
+{
+	"ImportPath": "github.com/mathpl/go-tsdmetrics",
+	"GoVersion": "go1.4.2",
+	"Deps": [
+		{
+			"ImportPath": "github.com/rcrowley/go-metrics",
+			"Rev": "3e5e593311103d49927c8d2b0fd93ccdfe4a525c"
+		}
+	]
+}
