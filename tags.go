@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 type StandardTaggedMetric struct {
@@ -30,6 +31,26 @@ func (stm *StandardTaggedMetric) TagString() string {
 
 type TagsID string
 type Tags map[string]string
+
+func TagsFromString(tags string) (Tags, error) {
+	splitTagVals := strings.Split(tags, ",")
+	parsedTags := make(Tags, len(splitTagVals))
+	if tags == "" {
+		return parsedTags, nil
+	}
+
+	for _, tagVal := range splitTagVals {
+		splitTagVal := strings.Split(tagVal, "=")
+		if len(splitTagVal) == 0 {
+			continue
+		} else if len(splitTagVal) != 2 {
+			return nil, fmt.Errorf("Comma delimited tag should follow the format tag=value: %s", tags)
+		} else {
+			parsedTags[splitTagVal[0]] = splitTagVal[1]
+		}
+	}
+	return parsedTags, nil
+}
 
 func (tm Tags) TagsID() TagsID {
 	keys := make([]string, len(tm))
