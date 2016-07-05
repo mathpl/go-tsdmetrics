@@ -205,7 +205,7 @@ func taggedOpenTSDB(c *TaggedOpenTSDBConfig) error {
 				log.Printf("Unable to send out metrics: %s", err)
 			} else {
 				if resp.StatusCode != 204 {
-					log.Printf("Unexpected return code sending metrics: %s", resp.StatusCode)
+					log.Printf("Unexpected return code sending metrics: %d", resp.StatusCode)
 				}
 			}
 		}
