@@ -7,28 +7,6 @@ import (
 	"strings"
 )
 
-type StandardTaggedMetric struct {
-	Tags   Tags
-	Metric interface{}
-}
-
-func (stm *StandardTaggedMetric) GetTagsID() TagsID {
-	return stm.GetTagsID()
-}
-
-func (stm *StandardTaggedMetric) AddTags(tags Tags) StandardTaggedMetric {
-	var newStm StandardTaggedMetric
-
-	newStm.Metric = stm.Metric
-	newStm.Tags = stm.Tags.AddTags(tags)
-
-	return newStm
-}
-
-func (stm *StandardTaggedMetric) TagString() string {
-	return stm.Tags.String()
-}
-
 type TagsID string
 type Tags map[string]string
 

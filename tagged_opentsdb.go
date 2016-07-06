@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -42,17 +44,17 @@ type TaggedOpenTSDBConfig struct {
 // TaggedOpenTSDB is a blocking exporter function which reports metrics in r
 // to a TSDB server located at addr, flushing them every d duration
 // and prepending metric names with prefix.
-func TaggedOpenTSDB(r TaggedRegistry, d time.Duration, prefix string, addr string, format OpenTSDBFormat) {
+func TaggedOpenTSDB(ctx context.Context, r TaggedRegistry, d time.Duration, prefix string, addr string, format OpenTSDBFormat) {
 	if format != Tcollector && format != Json {
 		log.Fatal("Unexpected Opentsdb output format")
 	}
 
-	netAddr, err := net.ResolveTCPAddr("tcp4", addr)
+	netAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		log.Fatalf("Unabe to resolve OpenTSDB address: %s", err)
 	}
 
-	TaggedOpenTSDBWithConfig(TaggedOpenTSDBConfig{
+	TaggedOpenTSDBWithConfig(ctx, TaggedOpenTSDBConfig{
 		Addr:          addr,
 		Registry:      r,
 		FlushInterval: d,
@@ -64,21 +66,34 @@ func TaggedOpenTSDB(r TaggedRegistry, d time.Duration, prefix string, addr strin
 
 // TaggedOpenTSDBWithConfig is a blocking exporter function just like TaggedOpenTSDB,
 // but it takes a TaggedOpenTSDBConfig instead.
-func TaggedOpenTSDBWithConfig(c TaggedOpenTSDBConfig) {
-	for _ = range time.Tick(c.FlushInterval) {
-		if err := taggedOpenTSDB(&c); nil != err {
-			log.Println(err)
+func TaggedOpenTSDBWithConfig(ctx context.Context, c TaggedOpenTSDBConfig) {
+	t := time.Tick(c.FlushInterval)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t:
+			if err := taggedOpenTSDB(&c); nil != err {
+				log.Println(err)
+			}
 		}
 	}
+
 }
 
-func TaggedOpenTSDBWithConfigAndPreprocessing(c TaggedOpenTSDBConfig, fn []func(TaggedRegistry)) {
-	for _ = range time.Tick(c.FlushInterval) {
-		for _, f := range fn {
-			f(c.Registry)
-		}
-		if err := taggedOpenTSDB(&c); nil != err {
-			log.Println(err)
+func TaggedOpenTSDBWithConfigAndPreprocessing(ctx context.Context, c TaggedOpenTSDBConfig, fn []func(TaggedRegistry)) {
+	t := time.Tick(c.FlushInterval)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t:
+			for _, f := range fn {
+				f(c.Registry)
+			}
+			if err := taggedOpenTSDB(&c); nil != err {
+				log.Println(err)
+			}
 		}
 	}
 }
@@ -95,9 +110,9 @@ func taggedOpenTSDB(c *TaggedOpenTSDBConfig) error {
 		defer conn.Close()
 
 		w := bufio.NewWriter(conn)
-		c.Registry.Each(func(name string, tm StandardTaggedMetric) {
-			tags := tm.Tags
-			switch metric := tm.Metric.(type) {
+		c.Registry.Each(func(name string, tm TaggedMetric) {
+			tags := tm.GetTags()
+			switch metric := tm.GetMetric().(type) {
 			case metrics.Counter:
 				fmt.Fprintf(w, "put %s %d %d %s\n", name, now, metric.Count(), tags.String())
 			case metrics.Gauge:
@@ -146,9 +161,9 @@ func taggedOpenTSDB(c *TaggedOpenTSDBConfig) error {
 		})
 	} else if c.Format == Json {
 		var tsd []OpenTSDBPoint
-		c.Registry.Each(func(name string, tm StandardTaggedMetric) {
-			tags := tm.Tags
-			switch metric := tm.Metric.(type) {
+		c.Registry.Each(func(name string, tm TaggedMetric) {
+			tags := tm.GetTags()
+			switch metric := tm.GetMetric().(type) {
 			case metrics.Counter:
 				tsd = append(tsd, OpenTSDBPoint{Metric: name, Timestamp: now, Value: metric.Count(), Tags: tags})
 			case metrics.Gauge:
