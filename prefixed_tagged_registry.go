@@ -56,6 +56,10 @@ func (r *PrefixedTaggedRegistry) Register(name string, tags Tags, i interface{})
 	return r.underlying.Register(name, tags, i)
 }
 
+func (r *PrefixedTaggedRegistry) Add(name string, tags Tags, i interface{}) error {
+	return r.underlying.Add(name, tags, i)
+}
+
 // Run all registered healthchecks.
 func (r *PrefixedTaggedRegistry) RunHealthchecks() {
 	r.underlying.RunHealthchecks()

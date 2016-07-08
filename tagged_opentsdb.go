@@ -5,13 +5,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"time"
 
 	"golang.org/x/net/context"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -31,86 +31,65 @@ type OpenTSDBPoint struct {
 
 // TaggedOpenTSDBConfig provides a container with configuration parameters for
 // the TaggedOpenTSDB exporter
-type TaggedOpenTSDBConfig struct {
+type TaggedOpenTSDB struct {
 	Addr          string         // Network address to connect to
 	Registry      TaggedRegistry // Registry to be exported
 	FlushInterval time.Duration  // Flush interval
 	DurationUnit  time.Duration  // Time conversion unit for durations
 	Format        OpenTSDBFormat
 
+	Logger *log.Logger
+
 	netAddr *net.TCPAddr
-}
-
-// TaggedOpenTSDB is a blocking exporter function which reports metrics in r
-// to a TSDB server located at addr, flushing them every d duration
-// and prepending metric names with prefix.
-func TaggedOpenTSDB(ctx context.Context, r TaggedRegistry, d time.Duration, prefix string, addr string, format OpenTSDBFormat) {
-	if format != Tcollector && format != Json {
-		log.Fatal("Unexpected Opentsdb output format")
-	}
-
-	netAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		log.Fatalf("Unabe to resolve OpenTSDB address: %s", err)
-	}
-
-	TaggedOpenTSDBWithConfig(ctx, TaggedOpenTSDBConfig{
-		Addr:          addr,
-		Registry:      r,
-		FlushInterval: d,
-		DurationUnit:  time.Nanosecond,
-		Format:        format,
-		netAddr:       netAddr,
-	})
 }
 
 // TaggedOpenTSDBWithConfig is a blocking exporter function just like TaggedOpenTSDB,
 // but it takes a TaggedOpenTSDBConfig instead.
-func TaggedOpenTSDBWithConfig(ctx context.Context, c TaggedOpenTSDBConfig) {
-	t := time.Tick(c.FlushInterval)
+func (t *TaggedOpenTSDB) Run(ctx context.Context) {
+	tick := time.Tick(t.FlushInterval)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t:
-			if err := taggedOpenTSDB(&c); nil != err {
-				log.Println(err)
+		case <-tick:
+			if err := t.taggedOpenTSDB(); nil != err {
+				t.Logger.Println(err)
 			}
 		}
 	}
-
 }
 
-func TaggedOpenTSDBWithConfigAndPreprocessing(ctx context.Context, c TaggedOpenTSDBConfig, fn []func(TaggedRegistry)) {
-	t := time.Tick(c.FlushInterval)
+func (t *TaggedOpenTSDB) RunWithPreprocessing(ctx context.Context, fn []func(TaggedRegistry)) {
+	tick := time.Tick(t.FlushInterval)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t:
+		case <-tick:
 			for _, f := range fn {
-				f(c.Registry)
+				f(t.Registry)
 			}
-			if err := taggedOpenTSDB(&c); nil != err {
-				log.Println(err)
+			if err := t.taggedOpenTSDB(); nil != err {
+				t.Logger.Println(err)
 			}
 		}
 	}
 }
 
-func taggedOpenTSDB(c *TaggedOpenTSDBConfig) error {
+func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 	now := time.Now().Unix()
-	du := float64(c.DurationUnit)
+	du := float64(t.DurationUnit)
 
-	if c.Format == Tcollector {
-		conn, err := net.DialTCP("tcp", nil, c.netAddr)
+	if t.Format == Tcollector {
+		conn, err := net.DialTCP("tcp", nil, t.netAddr)
 		if nil != err {
 			return err
 		}
 		defer conn.Close()
+		conn.SetWriteDeadline(time.Now().Add(time.Second * t.FlushInterval))
 
 		w := bufio.NewWriter(conn)
-		c.Registry.Each(func(name string, tm TaggedMetric) {
+		t.Registry.Each(func(name string, tm TaggedMetric) {
 			tags := tm.GetTags()
 			switch metric := tm.GetMetric().(type) {
 			case metrics.Counter:
@@ -159,9 +138,9 @@ func taggedOpenTSDB(c *TaggedOpenTSDBConfig) error {
 			}
 			w.Flush()
 		})
-	} else if c.Format == Json {
+	} else if t.Format == Json {
 		var tsd []OpenTSDBPoint
-		c.Registry.Each(func(name string, tm TaggedMetric) {
+		t.Registry.Each(func(name string, tm TaggedMetric) {
 			tags := tm.GetTags()
 			switch metric := tm.GetMetric().(type) {
 			case metrics.Counter:
@@ -210,17 +189,22 @@ func taggedOpenTSDB(c *TaggedOpenTSDBConfig) error {
 			}
 		})
 
+		if len(tsd) == 0 {
+			return nil
+		}
+
 		if msg, err := json.Marshal(tsd); err != nil {
-			log.Printf("Unable to serialize metrics json: %s", err)
+			t.Logger.Printf("Unable to serialize metrics json: %s", err)
 		} else {
 			contentReader := bytes.NewReader(msg)
 
-			hc := http.Client{}
-			if resp, err := hc.Post(c.Addr, "application/json", contentReader); err != nil {
-				log.Printf("Unable to send out metrics: %s", err)
+			c := http.Client{Timeout: t.FlushInterval}
+			if resp, err := c.Post(t.Addr, "application/json", contentReader); err != nil {
+				t.Logger.Printf("Unable to send out metrics: %s", err)
 			} else {
+				resp.Body.Close()
 				if resp.StatusCode != 204 {
-					log.Printf("Unexpected return code sending metrics: %d", resp.StatusCode)
+					t.Logger.Printf("Unexpected return code sending metrics: %d", resp.StatusCode)
 				}
 			}
 		}

@@ -32,7 +32,12 @@ func (r *SegmentedTaggedRegistry) GetRootRegistry() TaggedRegistry {
 }
 
 func (r *SegmentedTaggedRegistry) GetName(name string) string {
-	return fmt.Sprintf("%s.%s", r.GetPrefix(), name)
+	p := r.GetPrefix()
+	if p != "" {
+		return fmt.Sprintf("%s.%s", p, name)
+	}
+
+	return name
 }
 
 func (r *SegmentedTaggedRegistry) GetPrefix() string {
@@ -41,7 +46,11 @@ func (r *SegmentedTaggedRegistry) GetPrefix() string {
 	switch parent := r.parent.(type) {
 	case *SegmentedTaggedRegistry:
 		n = parent.GetPrefix()
-		n = fmt.Sprintf("%s.%s", n, r.prefix)
+		if n != "" {
+			n = fmt.Sprintf("%s.%s", n, r.prefix)
+		} else {
+			n = r.prefix
+		}
 	default:
 		n = r.prefix
 	}
@@ -86,6 +95,10 @@ func (r *SegmentedTaggedRegistry) GetOrRegister(name string, tags Tags, i interf
 // Register the given metric under the given name. The name will be prefixed.
 func (r *SegmentedTaggedRegistry) Register(name string, tags Tags, i interface{}) error {
 	return r.GetRootRegistry().Register(r.GetName(name), r.GetTags(tags), i)
+}
+
+func (r *SegmentedTaggedRegistry) Add(name string, tags Tags, i interface{}) error {
+	return r.GetRootRegistry().Add(r.GetName(name), r.GetTags(tags), i)
 }
 
 // Run all registered healthchecks.

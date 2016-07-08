@@ -50,13 +50,7 @@ var (
 	numCgoCalls int64
 )
 
-// Capture new values for the Go runtime statistics exported in
-// runtime.MemStats.  This is designed to be called as a goroutine.
-func CaptureRuntimeMemStats(r TaggedRegistry, d time.Duration) {
-	for _ = range time.Tick(d) {
-		CaptureTaggedRuntimeMemStatsOnce(r)
-	}
-}
+var RuntimeCaptureFn = []func(TaggedRegistry){CaptureTaggedRuntimeMemStatsOnce}
 
 // Capture new values for the Go runtime statistics exported in
 // runtime.MemStats.  This is designed to be called in a background

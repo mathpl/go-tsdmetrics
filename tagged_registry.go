@@ -25,6 +25,10 @@ type TaggedRegistry interface {
 	// Register the given metric under the given name.
 	Register(string, Tags, interface{}) error
 
+	// Add() will add metrics that will be reported a single time
+	// without getting registered
+	Add(string, Tags, interface{}) error
+
 	// Run all registered healthchecks.
 	RunHealthchecks()
 
@@ -35,17 +39,21 @@ type TaggedRegistry interface {
 	UnregisterAll()
 }
 
+type metricsStore map[string]map[TagsID]TaggedMetric
+
 // The standard implementation of a Registry is a mutex-protected map
 // of names to metrics.
 type DefaultTaggedRegistry struct {
-	metrics map[string]map[TagsID]TaggedMetric
-	mutex   sync.Mutex
+	metrics           metricsStore
+	additionalMetrics metricsStore
+	mutex             sync.Mutex
 }
 
 // Create a new registry.
 func NewTaggedRegistry() TaggedRegistry {
 	var r DefaultTaggedRegistry
-	r.metrics = make(map[string]map[TagsID]TaggedMetric, 0)
+	r.metrics = make(metricsStore, 0)
+	r.additionalMetrics = make(metricsStore, 0)
 	return &r
 }
 
@@ -93,7 +101,7 @@ func (r *DefaultTaggedRegistry) GetOrRegister(name string, tags Tags, i interfac
 	if v := reflect.ValueOf(i); v.Kind() == reflect.Func {
 		i = v.Call(nil)[0].Interface()
 	}
-	r.register(name, tags, i)
+	r.register(r.metrics, name, tags, i)
 	return i
 }
 
@@ -102,7 +110,13 @@ func (r *DefaultTaggedRegistry) GetOrRegister(name string, tags Tags, i interfac
 func (r *DefaultTaggedRegistry) Register(name string, tags Tags, i interface{}) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	return r.register(name, tags, i)
+	return r.register(r.metrics, name, tags, i)
+}
+
+func (r *DefaultTaggedRegistry) Add(name string, tags Tags, i interface{}) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	return r.register(r.additionalMetrics, name, tags, i)
 }
 
 // Run all registered healthchecks.
@@ -143,19 +157,19 @@ func (r *DefaultTaggedRegistry) UnregisterAll() {
 	}
 }
 
-func (r *DefaultTaggedRegistry) register(name string, tags Tags, i interface{}) error {
-	if t, ok := r.metrics[name]; ok {
+func (r *DefaultTaggedRegistry) register(s metricsStore, name string, tags Tags, i interface{}) error {
+	if t, ok := s[name]; ok {
 		if _, ok := t[tags.TagsID()]; ok {
 			return DuplicateTaggedMetric{name, tags}
 		}
 	}
 	switch i.(type) {
 	case metrics.Counter, metrics.Gauge, metrics.GaugeFloat64, metrics.Healthcheck, metrics.Histogram, metrics.Meter, metrics.Timer:
-		if _, ok := r.metrics[name]; !ok {
-			r.metrics[name] = make(map[TagsID]TaggedMetric, 1)
+		if _, ok := s[name]; !ok {
+			s[name] = make(map[TagsID]TaggedMetric, 1)
 		}
 		taggedMetric := DefaultTaggedMetric{Tags: tags, Metric: i}
-		r.metrics[name][tags.TagsID()] = &taggedMetric
+		s[name][tags.TagsID()] = &taggedMetric
 	}
 	return nil
 }
@@ -167,5 +181,12 @@ func (r *DefaultTaggedRegistry) registered() map[string]map[TagsID]TaggedMetric 
 	for name, i := range r.metrics {
 		metrics[name] = i
 	}
+
+	// Additional metrics
+	for name, i := range r.additionalMetrics {
+		metrics[name] = i
+	}
+	r.additionalMetrics = make(map[string]map[TagsID]TaggedMetric)
+
 	return metrics
 }

@@ -1,0 +1,8 @@
+package: github.com/mathpl/go-tsdmetrics
+import:
+- package: github.com/Sirupsen/logrus
+  version: v0.10.0
+- package: github.com/rcrowley/go-metrics
+- package: golang.org/x/net
+  subpackages:
+  - context
