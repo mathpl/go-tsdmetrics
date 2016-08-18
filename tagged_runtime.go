@@ -13,8 +13,6 @@ var (
 		MemStats struct {
 			Alloc         metrics.Gauge
 			BuckHashSys   metrics.Gauge
-			DebugGC       metrics.Gauge
-			EnableGC      metrics.Gauge
 			Frees         metrics.Gauge
 			HeapAlloc     metrics.Gauge
 			HeapIdle      metrics.Gauge
@@ -32,12 +30,16 @@ var (
 			NextGC        metrics.Gauge
 			NumGC         metrics.Gauge
 			GCCPUFraction metrics.GaugeFloat64
-			PauseNs       metrics.Histogram
+			PauseNs       IntegerHistogram
 			PauseTotalNs  metrics.Gauge
 			StackInuse    metrics.Gauge
 			StackSys      metrics.Gauge
 			Sys           metrics.Gauge
 			TotalAlloc    metrics.Gauge
+
+			// Not super interesting
+			//DebugGC       metrics.Gauge
+			//EnableGC      metrics.Gauge
 		}
 		NumCgoCall   metrics.Gauge
 		NumGoroutine metrics.Gauge
@@ -67,16 +69,16 @@ func CaptureTaggedRuntimeMemStatsOnce(r TaggedRegistry) {
 
 	runtimeMetrics.MemStats.Alloc.Update(int64(memStats.Alloc))
 	runtimeMetrics.MemStats.BuckHashSys.Update(int64(memStats.BuckHashSys))
-	if memStats.DebugGC {
-		runtimeMetrics.MemStats.DebugGC.Update(1)
-	} else {
-		runtimeMetrics.MemStats.DebugGC.Update(0)
-	}
-	if memStats.EnableGC {
-		runtimeMetrics.MemStats.EnableGC.Update(1)
-	} else {
-		runtimeMetrics.MemStats.EnableGC.Update(0)
-	}
+	//if memStats.DebugGC {
+	//	runtimeMetrics.MemStats.DebugGC.Update(1)
+	//} else {
+	//	runtimeMetrics.MemStats.DebugGC.Update(0)
+	//}
+	//if memStats.EnableGC {
+	//	runtimeMetrics.MemStats.EnableGC.Update(1)
+	//} else {
+	//	runtimeMetrics.MemStats.EnableGC.Update(0)
+	//}
 
 	runtimeMetrics.MemStats.Frees.Update(int64(memStats.Frees - frees))
 	runtimeMetrics.MemStats.HeapAlloc.Update(int64(memStats.HeapAlloc))
@@ -138,8 +140,6 @@ func CaptureTaggedRuntimeMemStatsOnce(r TaggedRegistry) {
 func RegisterTaggedRuntimeMemStats(r TaggedRegistry) {
 	runtimeMetrics.MemStats.Alloc = metrics.NewGauge()
 	runtimeMetrics.MemStats.BuckHashSys = metrics.NewGauge()
-	runtimeMetrics.MemStats.DebugGC = metrics.NewGauge()
-	runtimeMetrics.MemStats.EnableGC = metrics.NewGauge()
 	runtimeMetrics.MemStats.Frees = metrics.NewGauge()
 	runtimeMetrics.MemStats.HeapAlloc = metrics.NewGauge()
 	runtimeMetrics.MemStats.HeapIdle = metrics.NewGauge()
@@ -157,7 +157,7 @@ func RegisterTaggedRuntimeMemStats(r TaggedRegistry) {
 	runtimeMetrics.MemStats.NextGC = metrics.NewGauge()
 	runtimeMetrics.MemStats.NumGC = metrics.NewGauge()
 	runtimeMetrics.MemStats.GCCPUFraction = metrics.NewGaugeFloat64()
-	runtimeMetrics.MemStats.PauseNs = metrics.NewHistogram(metrics.NewExpDecaySample(1028, 0.015))
+	runtimeMetrics.MemStats.PauseNs = NewIntegerHistogram(metrics.NewExpDecaySample(1024, 0.15))
 	runtimeMetrics.MemStats.PauseTotalNs = metrics.NewGauge()
 	runtimeMetrics.MemStats.StackInuse = metrics.NewGauge()
 	runtimeMetrics.MemStats.StackSys = metrics.NewGauge()
@@ -167,10 +167,11 @@ func RegisterTaggedRuntimeMemStats(r TaggedRegistry) {
 	runtimeMetrics.NumGoroutine = metrics.NewGauge()
 	runtimeMetrics.ReadMemStats = metrics.NewTimer()
 
+	//runtimeMetrics.MemStats.DebugGC = metrics.NewGauge()
+	//runtimeMetrics.MemStats.EnableGC = metrics.NewGauge()
+
 	r.Register("go.runtime.memstats.alloc", Tags{}, runtimeMetrics.MemStats.Alloc)
 	r.Register("go.runtime.memstats.buckhashsys", Tags{}, runtimeMetrics.MemStats.BuckHashSys)
-	r.Register("go.runtime.memstats.debuggc", Tags{}, runtimeMetrics.MemStats.DebugGC)
-	r.Register("go.runtime.memstats.enablegc", Tags{}, runtimeMetrics.MemStats.EnableGC)
 	r.Register("go.runtime.memstats.frees", Tags{}, runtimeMetrics.MemStats.Frees)
 	r.Register("go.runtime.memstats.heap.alloc", Tags{}, runtimeMetrics.MemStats.HeapAlloc)
 	r.Register("go.runtime.memstats.heap.idle", Tags{}, runtimeMetrics.MemStats.HeapIdle)
@@ -197,4 +198,7 @@ func RegisterTaggedRuntimeMemStats(r TaggedRegistry) {
 	r.Register("go.runtime.numcgocall", Tags{}, runtimeMetrics.NumCgoCall)
 	r.Register("go.runtime.numgoroutine", Tags{}, runtimeMetrics.NumGoroutine)
 	r.Register("go.runtime.readmemstats", Tags{}, runtimeMetrics.ReadMemStats)
+
+	//r.Register("go.runtime.memstats.debuggc", Tags{}, runtimeMetrics.MemStats.DebugGC)
+	//r.Register("go.runtime.memstats.enablegc", Tags{}, runtimeMetrics.MemStats.EnableGC)
 }
