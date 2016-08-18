@@ -53,7 +53,7 @@ func (t *TaggedOpenTSDB) Run(ctx context.Context) {
 			return
 		case <-tick:
 			if err := t.taggedOpenTSDB(); nil != err {
-				t.Logger.Println(err)
+				t.Logger.Error(err)
 			}
 		}
 	}
@@ -186,10 +186,24 @@ func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".5m", Timestamp: now, Value: t.Rate5(), Tags: tags})
 				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".15m", Timestamp: now, Value: t.Rate15(), Tags: tags})
 				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".mean-rate", Timestamp: now, Value: t.RateMean(), Tags: tags})
+			case IntegerHistogram:
+				h := metric.Snapshot()
+				ps := h.Percentiles([]float64{0.5, 0.75, 0.90, 0.95, 0.99})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".count", Timestamp: now, Value: h.Count(), Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".min", Timestamp: now, Value: h.Min(), Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".max", Timestamp: now, Value: h.Max(), Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".mean", Timestamp: now, Value: h.Mean(), Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".std-dev", Timestamp: now, Value: h.StdDev(), Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".p50", Timestamp: now, Value: ps[0], Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".p75", Timestamp: now, Value: ps[1], Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".p95", Timestamp: now, Value: ps[2], Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".p99", Timestamp: now, Value: ps[3], Tags: tags})
+				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".p999", Timestamp: now, Value: ps[4], Tags: tags})
 			}
 		})
 
 		if len(tsd) == 0 {
+			t.Logger.Info("Nothing to send")
 			return nil
 		}
 

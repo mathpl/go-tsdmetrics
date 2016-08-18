@@ -164,7 +164,7 @@ func (r *DefaultTaggedRegistry) register(s metricsStore, name string, tags Tags,
 		}
 	}
 	switch i.(type) {
-	case metrics.Counter, metrics.Gauge, metrics.GaugeFloat64, metrics.Healthcheck, metrics.Histogram, metrics.Meter, metrics.Timer:
+	case metrics.Counter, metrics.Gauge, metrics.GaugeFloat64, metrics.Healthcheck, metrics.Histogram, metrics.Meter, metrics.Timer, IntegerHistogram:
 		if _, ok := s[name]; !ok {
 			s[name] = make(map[TagsID]TaggedMetric, 1)
 		}

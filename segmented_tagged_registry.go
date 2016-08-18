@@ -8,6 +8,13 @@ type SegmentedTaggedRegistry struct {
 	defaultTags Tags
 }
 
+func NewRootSegmentedTaggedRegistry(tags Tags) TaggedRegistry {
+	return &SegmentedTaggedRegistry{
+		parent:      NewTaggedRegistry(),
+		defaultTags: tags,
+	}
+}
+
 func NewSegmentedTaggedRegistry(prefix string, tags Tags, parentRegistry TaggedRegistry) TaggedRegistry {
 	if parentRegistry == nil {
 		parentRegistry = NewTaggedRegistry()
