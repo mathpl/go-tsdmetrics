@@ -38,7 +38,7 @@ type TaggedOpenTSDB struct {
 	DurationUnit  time.Duration  // Time conversion unit for durations
 	Format        OpenTSDBFormat
 
-	Logger *log.Logger
+	Logger log.FieldLogger
 
 	netAddr *net.TCPAddr
 }
