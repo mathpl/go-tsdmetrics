@@ -1,4 +1,4 @@
-package tsdmetrics
+package opentsdbreporter
 
 import (
 	"bufio"
@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	log "github.com/Sirupsen/logrus"
+	tsdmetrics "github.com/mathpl/go-tsdmetrics"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -32,13 +32,11 @@ type OpenTSDBPoint struct {
 // TaggedOpenTSDBConfig provides a container with configuration parameters for
 // the TaggedOpenTSDB exporter
 type TaggedOpenTSDB struct {
-	Addr          string         // Network address to connect to
-	Registry      TaggedRegistry // Registry to be exported
-	FlushInterval time.Duration  // Flush interval
-	DurationUnit  time.Duration  // Time conversion unit for durations
+	Addr          string                    // Network address to connect to
+	Registry      tsdmetrics.TaggedRegistry // Registry to be exported
+	FlushInterval time.Duration             // Flush interval
+	DurationUnit  time.Duration             // Time conversion unit for durations
 	Format        OpenTSDBFormat
-
-	Logger log.FieldLogger
 
 	netAddr *net.TCPAddr
 }
@@ -53,13 +51,13 @@ func (t *TaggedOpenTSDB) Run(ctx context.Context) {
 			return
 		case <-tick:
 			if err := t.taggedOpenTSDB(); nil != err {
-				t.Logger.Error(err)
+				log.Error(err)
 			}
 		}
 	}
 }
 
-func (t *TaggedOpenTSDB) RunWithPreprocessing(ctx context.Context, fn []func(TaggedRegistry)) {
+func (t *TaggedOpenTSDB) RunWithPreprocessing(ctx context.Context, fn []func(tsdmetrics.TaggedRegistry)) {
 	tick := time.Tick(t.FlushInterval)
 	for {
 		select {
@@ -70,7 +68,7 @@ func (t *TaggedOpenTSDB) RunWithPreprocessing(ctx context.Context, fn []func(Tag
 				f(t.Registry)
 			}
 			if err := t.taggedOpenTSDB(); nil != err {
-				t.Logger.Println(err)
+				log.Println(err)
 			}
 		}
 	}
@@ -89,7 +87,7 @@ func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 		conn.SetWriteDeadline(time.Now().Add(time.Second * t.FlushInterval))
 
 		w := bufio.NewWriter(conn)
-		t.Registry.Each(func(name string, tm TaggedMetric) {
+		t.Registry.Each(func(name string, tm tsdmetrics.TaggedMetric) {
 			tags := tm.GetTags()
 			switch metric := tm.GetMetric().(type) {
 			case metrics.Counter:
@@ -135,12 +133,25 @@ func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 				fmt.Fprintf(w, "put %s.5m-rate %d %.2f %s\n", name, now, t.Rate5(), tags.String())
 				fmt.Fprintf(w, "put %s.15m-rate %d %.2f %s\n", name, now, t.Rate15(), tags.String())
 				fmt.Fprintf(w, "put %s.mean-rate %d %.2f %s\n", name, now, t.RateMean(), tags.String())
+			case tsdmetrics.IntegerHistogram:
+				h := metric.Snapshot()
+				ps := h.Percentiles([]float64{0.5, 0.75, 0.90, 0.95, 0.99})
+				fmt.Fprintf(w, "put %s.count %d %d %s\n", name, now, h.Count(), tags.String())
+				fmt.Fprintf(w, "put %s.min %d %d %s\n", name, now, h.Min(), tags.String())
+				fmt.Fprintf(w, "put %s.max %d %d %s\n", name, now, h.Max(), tags.String())
+				fmt.Fprintf(w, "put %s.mean %d %d %s\n", name, now, h.Mean(), tags.String())
+				fmt.Fprintf(w, "put %s.std-dev %d %d %s\n", name, now, h.StdDev(), tags.String())
+				fmt.Fprintf(w, "put %s.p50 %d %d %s\n", name, now, ps[0], tags.String())
+				fmt.Fprintf(w, "put %s.p75 %d %d %s\n", name, now, ps[1], tags.String())
+				fmt.Fprintf(w, "put %s.p90 %d %d %s\n", name, now, ps[2], tags.String())
+				fmt.Fprintf(w, "put %s.p95 %d %d %s\n", name, now, ps[3], tags.String())
+				fmt.Fprintf(w, "put %s.p99 %d %d %s\n", name, now, ps[4], tags.String())
 			}
 			w.Flush()
 		})
 	} else if t.Format == Json {
 		var tsd []OpenTSDBPoint
-		t.Registry.Each(func(name string, tm TaggedMetric) {
+		t.Registry.Each(func(name string, tm tsdmetrics.TaggedMetric) {
 			tags := tm.GetTags()
 			switch metric := tm.GetMetric().(type) {
 			case metrics.Counter:
@@ -186,7 +197,7 @@ func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".5m", Timestamp: now, Value: t.Rate5(), Tags: tags})
 				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".15m", Timestamp: now, Value: t.Rate15(), Tags: tags})
 				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".mean-rate", Timestamp: now, Value: t.RateMean(), Tags: tags})
-			case IntegerHistogram:
+			case tsdmetrics.IntegerHistogram:
 				h := metric.Snapshot()
 				ps := h.Percentiles([]float64{0.5, 0.75, 0.90, 0.95, 0.99})
 				tsd = append(tsd, OpenTSDBPoint{Metric: name + ".count", Timestamp: now, Value: h.Count(), Tags: tags})
@@ -203,22 +214,22 @@ func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 		})
 
 		if len(tsd) == 0 {
-			t.Logger.Info("Nothing to send")
+			log.Info("Nothing to send")
 			return nil
 		}
 
 		if msg, err := json.Marshal(tsd); err != nil {
-			t.Logger.Printf("Unable to serialize metrics json: %s", err)
+			log.Printf("Unable to serialize metrics json: %s", err)
 		} else {
 			contentReader := bytes.NewReader(msg)
 
 			c := http.Client{Timeout: t.FlushInterval}
 			if resp, err := c.Post(t.Addr, "application/json", contentReader); err != nil {
-				t.Logger.Printf("Unable to send out metrics: %s", err)
+				log.Printf("Unable to send out metrics: %s", err)
 			} else {
 				resp.Body.Close()
 				if resp.StatusCode != 204 {
-					t.Logger.Printf("Unexpected return code sending metrics: %d", resp.StatusCode)
+					log.Printf("Unexpected return code sending metrics: %d", resp.StatusCode)
 				}
 			}
 		}

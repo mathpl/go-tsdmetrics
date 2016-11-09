@@ -1,4 +1,4 @@
-package tsdmetrics
+package opentsdbreporter
 
 import (
 	"time"
