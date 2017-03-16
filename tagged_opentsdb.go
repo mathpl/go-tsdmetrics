@@ -76,6 +76,32 @@ func (t *TaggedOpenTSDB) RunWithPreprocessing(ctx context.Context, fn []func(Tag
 	}
 }
 
+func (t *TaggedOpenTSDB) RunWithProcessing(ctx context.Context, preFn, postFn []func(TaggedRegistry)) {
+	tick := time.Tick(t.FlushInterval)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick:
+			if preFn != nil {
+				for _, f := range preFn {
+					f(t.Registry)
+				}
+			}
+
+			if err := t.taggedOpenTSDB(); nil != err {
+				t.Logger.Println(err)
+			}
+
+			if postFn != nil {
+				for _, f := range postFn {
+					f(t.Registry)
+				}
+			}
+		}
+	}
+}
+
 func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 	now := time.Now().Unix()
 	du := float64(t.DurationUnit)
