@@ -3,13 +3,12 @@ package tsdmetrics
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
-
-	"golang.org/x/net/context"
 
 	"github.com/rcrowley/go-metrics"
 	log "github.com/sirupsen/logrus"

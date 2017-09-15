@@ -3,7 +3,7 @@ package tsdmetrics
 import (
 	"time"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 func ExampleTaggedOpenTSDB() {
