@@ -101,6 +101,10 @@ func (t *TaggedOpenTSDB) RunWithProcessing(ctx context.Context, preFn, postFn []
 	}
 }
 
+func (t *TaggedOpenTSDB) Export() error {
+	return t.taggedOpenTSDB()
+}
+
 func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 	now := time.Now().Unix()
 	du := float64(t.DurationUnit)
