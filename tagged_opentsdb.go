@@ -3,6 +3,7 @@ package tsdmetrics
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,6 +37,7 @@ type TaggedOpenTSDB struct {
 	FlushInterval time.Duration  // Flush interval
 	DurationUnit  time.Duration  // Time conversion unit for durations
 	Format        OpenTSDBFormat
+	Compress      bool
 
 	Logger log.FieldLogger
 
@@ -236,13 +238,29 @@ func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 			return nil
 		}
 
-		if msg, err := json.Marshal(tsd); err != nil {
+		buf := &bytes.Buffer{}
+		if t.Compress {
+			w := gzip.NewWriter(buf)
+			err := json.NewEncoder(w).Encode(tsd)
+			w.Close()
+			if err != nil {
+				t.Logger.Printf("Unable to serialize metrics json: %s", err)
+				return nil
+			}
+		} else if err := json.NewEncoder(buf).Encode(tsd); err != nil {
 			t.Logger.Printf("Unable to serialize metrics json: %s", err)
-		} else {
-			contentReader := bytes.NewReader(msg)
+			return nil
+		}
 
+		if req, err := http.NewRequest(http.MethodPost, t.Addr, buf); err != nil {
+			t.Logger.Printf("Unable to create a new request: %s", err)
+		} else {
+			req.Header.Set("Content-Type", "application/json")
+			if t.Compress {
+				req.Header.Set("Content-Encoding", "gzip")
+			}
 			c := http.Client{Timeout: t.FlushInterval}
-			if resp, err := c.Post(t.Addr, "application/json", contentReader); err != nil {
+			if resp, err := c.Do(req); err != nil {
 				t.Logger.Printf("Unable to send out metrics: %s", err)
 			} else {
 				resp.Body.Close()
