@@ -38,6 +38,7 @@ type TaggedOpenTSDB struct {
 	DurationUnit  time.Duration  // Time conversion unit for durations
 	Format        OpenTSDBFormat
 	Compress      bool
+	BulkSize      int
 
 	Logger log.FieldLogger
 
@@ -238,34 +239,45 @@ func (t *TaggedOpenTSDB) taggedOpenTSDB() error {
 			return nil
 		}
 
-		buf := &bytes.Buffer{}
-		if t.Compress {
-			w := gzip.NewWriter(buf)
-			err := json.NewEncoder(w).Encode(tsd)
-			w.Close()
-			if err != nil {
+		bulkSize := t.BulkSize
+		if t.BulkSize == 0 {
+			bulkSize = len(tsd)
+		}
+
+		for i := 0; i < len(tsd); i += bulkSize {
+			if i+bulkSize > len(tsd) {
+				bulkSize = len(tsd) - i
+			}
+
+			buf := &bytes.Buffer{}
+			if t.Compress {
+				w := gzip.NewWriter(buf)
+				err := json.NewEncoder(w).Encode(tsd[i : i+bulkSize])
+				w.Close()
+				if err != nil {
+					t.Logger.Printf("Unable to serialize metrics json: %s", err)
+					return nil
+				}
+			} else if err := json.NewEncoder(buf).Encode(tsd[i : i+bulkSize]); err != nil {
 				t.Logger.Printf("Unable to serialize metrics json: %s", err)
 				return nil
 			}
-		} else if err := json.NewEncoder(buf).Encode(tsd); err != nil {
-			t.Logger.Printf("Unable to serialize metrics json: %s", err)
-			return nil
-		}
 
-		if req, err := http.NewRequest(http.MethodPost, t.Addr, buf); err != nil {
-			t.Logger.Printf("Unable to create a new request: %s", err)
-		} else {
-			req.Header.Set("Content-Type", "application/json")
-			if t.Compress {
-				req.Header.Set("Content-Encoding", "gzip")
-			}
-			c := http.Client{Timeout: t.FlushInterval}
-			if resp, err := c.Do(req); err != nil {
-				t.Logger.Printf("Unable to send out metrics: %s", err)
+			if req, err := http.NewRequest(http.MethodPost, t.Addr, buf); err != nil {
+				t.Logger.Printf("Unable to create a new request: %s", err)
 			} else {
-				resp.Body.Close()
-				if resp.StatusCode != 204 {
-					t.Logger.Printf("Unexpected return code sending metrics: %d", resp.StatusCode)
+				req.Header.Set("Content-Type", "application/json")
+				if t.Compress {
+					req.Header.Set("Content-Encoding", "gzip")
+				}
+				c := http.Client{Timeout: t.FlushInterval}
+				if resp, err := c.Do(req); err != nil {
+					t.Logger.Printf("Unable to send out metrics: %s", err)
+				} else {
+					resp.Body.Close()
+					if resp.StatusCode != 204 {
+						t.Logger.Printf("Unexpected return code sending metrics: %d", resp.StatusCode)
+					}
 				}
 			}
 		}
